@@ -91,7 +91,10 @@ def dims(p):
 def clean_desc(s):
     s = re.sub(r'Show More Show Less', '', s)
     s = re.sub(r'\s+', ' ', s).strip()
-    s = s.replace('masterpiec ', 'masterpiece ').replace('ergo- nomic', 'ergonomic')
+    s = s.replace('masterpiec ', 'masterpiece ')
+    # undo line-break hyphenation from the source copy: "em- braces" -> "embraces", "A- shaped" -> "A-shaped"
+    s = re.sub(r'\b([A-Z])- ([a-z])', r'\1-\2', s)
+    s = re.sub(r'([a-z])- ([a-z])', r'\1\2', s)
     return s
 
 
