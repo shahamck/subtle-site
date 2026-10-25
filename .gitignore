@@ -1,0 +1,5 @@
+node_modules
+dist
+raw/img
+.DS_Store
+raw/rooms
