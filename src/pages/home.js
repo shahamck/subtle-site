@@ -2,12 +2,12 @@ import { products, byId, ROOMS, inr, photo, thumb, asset, cover, priceLabel, def
 import { cart } from '../store.js';
 import { logo, icon, badge, esc, reveal } from '../ui.js';
 
-// Hero scenes: a room photo + a full-frame Vision cutout of the chair in it, so the chair can
-// rise out of the photo card into the wordmark (layout solved per viewport in fitHero).
+// Hero scenes: a studio cutout of each chair standing on its own coloured backdrop; the chair is
+// taller than the card so it rises into the wordmark (sized per viewport in fitHero).
 const SCENES = [
-  { id: 'ethos-chandigarh-chair', file: 'ETHOS-WALNUT-1', label: 'Ethos · Ashwood', tone: 'dark', x: 0.56 },
-  { id: 'cadera-chair', file: 'CADERA-TEAK-2', label: 'Cadera · Teak', tone: 'dark', x: 0.6 },
-  { id: 'dallas-armchair', file: 'DALLAS-MAHOGANY-1', label: 'Dallas · Mahogany', tone: 'light', x: 0.58 },
+  { id: 'ethos-chandigarh-chair', file: 'ethos', label: 'Ethos · Ashwood', bg: '#C4876A', x: 0.56 },
+  { id: 'cadera-chair', file: 'cadera', label: 'Cadera · Teak', bg: '#9EA58A', x: 0.6 },
+  { id: 'dallas-armchair', file: 'dallas', label: 'Dallas · Mahogany', bg: '#8FA2AF', x: 0.57 },
 ];
 
 // Rooms for "Handpicked favourites" — hotspots sit on pieces from the catalogue in the shop's own renders.
@@ -65,16 +65,17 @@ export default function home(root) {
     <h1 class="hero-word">${logo()}<span class="sr">subtle. — furniture &amp; home decor</span></h1>
     <div class="hero-stage">
       <div class="hero-card">
-        ${SCENES.map((s, i) => `<img class="hero-photo ${i ? '' : 'on'}" data-i="${i}" src="${asset(`hero/${s.file}.jpg`)}" alt="" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}>`).join('')}
-        <div class="hero-shade"></div>
+        ${SCENES.map((s, i) => `<div class="hero-bg ${i ? '' : 'on'}" style="--bg:${s.bg}"></div>`).join('')}
+        <div class="hero-floor"></div>
+        <div class="hero-shadow"></div>
       </div>
       <div class="hero-cuts" aria-hidden="true">
-        ${SCENES.map((s, i) => `<img class="hero-cut ${i ? '' : 'on'}" data-i="${i}" src="${asset(`hero/${s.file}.png`)}" alt="">`).join('')}
+        ${SCENES.map((s, i) => `<img class="hero-cut ${i ? '' : 'on'}" data-i="${i}" src="${asset(`hero/${s.file}.webp`)}" alt="" ${i ? '' : 'fetchpriority="high"'}>`).join('')}
       </div>
-      <p class="hero-glass" data-tone="${SCENES[0].tone}">Solid Ashwood &amp; Mahogany, shaped by hand and finished in imported stains — furniture that feels effortless and timeless.</p>
+      <p class="hero-glass">Solid Ashwood &amp; Mahogany, shaped by hand and finished in imported stains — furniture that feels effortless and timeless.</p>
       <a class="hero-tag" href="#/p/${SCENES[0].id}"><span>${esc(byId[SCENES[0].id].name)}</span><b>${priceLabel(byId[SCENES[0].id])}</b>${icon.arrow}</a>
       <div class="hero-thumbs" role="tablist" aria-label="Featured pieces">
-        ${SCENES.map((s, i) => `<button type="button" role="tab" aria-selected="${!i}" data-i="${i}" title="${esc(s.label)}"><img src="${asset(`hero/${s.file}.jpg`)}" alt="${esc(s.label)}"></button>`).join('')}
+        ${SCENES.map((s, i) => `<button type="button" role="tab" aria-selected="${!i}" data-i="${i}" title="${esc(s.label)}" style="--bg:${s.bg}"><img src="${asset(`hero/${s.file}.webp`)}" alt="${esc(s.label)}"></button>`).join('')}
       </div>
       ${badge('Shop furniture', '#/shop', 'hero-badge')}
     </div>
@@ -183,64 +184,43 @@ export default function home(root) {
 function initHero(root) {
   const stage = root.querySelector('.hero-stage');
   const card = root.querySelector('.hero-card');
-  const photos = [...root.querySelectorAll('.hero-photo')];
+  const bgs = [...root.querySelectorAll('.hero-bg')];
   const cuts = [...root.querySelectorAll('.hero-cut')];
+  const shadow = root.querySelector('.hero-shadow');
   const thumbs = [...root.querySelectorAll('.hero-thumbs button')];
-  const glass = root.querySelector('.hero-glass');
   const tag = root.querySelector('.hero-tag');
-  const boxes = SCENES.map(() => null);
   let current = 0;
 
-  // alpha bounds of each cutout (fractions of the frame), measured once on a small canvas
-  const measure = (img, i) => new Promise((done) => {
-    const go = () => {
-      const n = 160;
-      const c = document.createElement('canvas');
-      c.width = c.height = n;
-      const g = c.getContext('2d', { willReadFrequently: true });
-      g.drawImage(img, 0, 0, n, n);
-      const a = g.getImageData(0, 0, n, n).data;
-      let l = n, r = 0, t = n, b = 0;
-      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-        if (a[(y * n + x) * 4 + 3] > 40) { if (x < l) l = x; if (x > r) r = x; if (y < t) t = y; if (y > b) b = y; }
-      }
-      boxes[i] = { l: l / n, r: (r + 1) / n, t: t / n, b: (b + 1) / n };
-      done();
-    };
-    img.complete && img.naturalWidth ? go() : img.addEventListener('load', go, { once: true });
-  });
+  const loaded = (img) => new Promise((done) => (img.complete && img.naturalWidth ? done() : img.addEventListener('load', done, { once: true })));
 
+  // stand each chair on the card's floor, ~1.2× the card height so its back rises into the wordmark
   function fit() {
     const W = card.clientWidth, H = card.clientHeight;
     const word = root.querySelector('.hero-word svg').getBoundingClientRect().height;
+    const floor = H * 0.075;
     SCENES.forEach((s, i) => {
-      const box = boxes[i];
-      if (!box) return;
-      const chairH = box.b - box.t;
-      // scale so the chair stands ~1.18× the card height, but never smaller than cover
-      let S = Math.max(W, H, (H * 1.18) / chairH);
-      S = Math.min(S, (H + word * 0.62) / chairH);
-      S = Math.max(S, W, H);
-      const cx = (box.l + box.r) / 2;
-      let x = W * s.x - cx * S;
-      x = Math.min(0, Math.max(W - S, x));
-      let y = H - (box.b + 0.015) * S;
-      y = Math.min(0, Math.max(H - S, y));
-      for (const el of [photos[i], cuts[i]]) {
-        el.style.width = el.style.height = `${S}px`;
-        el.style.transform = `translate(${x}px, ${y}px)`;
-      }
+      const img = cuts[i];
+      if (!img.naturalWidth) return;
+      const aspect = img.naturalWidth / img.naturalHeight;
+      const h = Math.min(H * 1.2, H - floor + word * 0.62, (W * (W < 700 ? 0.94 : 0.8)) / aspect);
+      const w = h * aspect;
+      const left = Math.min(W - w, Math.max(0, W * s.x - w / 2));
+      Object.assign(img.style, { width: `${w}px`, height: `${h}px`, left: `${left}px`, top: `${H - floor - h}px` });
+      if (i === current) placeShadow(left, w);
     });
+  }
+  function placeShadow(left, w) {
+    Object.assign(shadow.style, { left: `${left + w * 0.08}px`, width: `${w * 0.84}px` });
   }
 
   function show(i) {
     current = i;
-    photos.forEach((p, k) => p.classList.toggle('on', k === i));
-    cuts.forEach((p, k) => p.classList.toggle('on', k === i));
+    bgs.forEach((b, k) => b.classList.toggle('on', k === i));
+    cuts.forEach((c, k) => c.classList.toggle('on', k === i));
     thumbs.forEach((b, k) => b.setAttribute('aria-selected', String(k === i)));
-    const s = SCENES[i];
-    const p = byId[s.id];
-    glass.dataset.tone = s.tone;
+    const c = cuts[i];
+    placeShadow(parseFloat(c.style.left) || 0, parseFloat(c.style.width) || 0);
+    const p = byId[SCENES[i].id];
     tag.href = `#/p/${p.id}`;
     tag.innerHTML = `<span>${esc(p.name)}</span><b>${priceLabel(p)}</b>${icon.arrow}`;
   }
@@ -250,7 +230,7 @@ function initHero(root) {
   const restart = () => { clearInterval(timer); timer = setInterval(() => show((current + 1) % SCENES.length), 6500); };
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches) restart();
 
-  Promise.all(cuts.map(measure)).then(() => { fit(); stage.classList.add('ready'); });
+  Promise.all(cuts.map(loaded)).then(() => { fit(); stage.classList.add('ready'); });
   const ro = new ResizeObserver(fit);
   ro.observe(card);
   return () => { clearInterval(timer); ro.disconnect(); };
